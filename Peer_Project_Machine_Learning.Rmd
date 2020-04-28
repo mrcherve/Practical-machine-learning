@@ -1,0 +1,133 @@
+---
+title: "Machine Learning on Weight Lifting"
+author: "Mikael Herve"
+date: "4/26/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Executive summary
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+Throughout this document, we are interested in predicting whether some individuals performed exercise properly, and predicting the manner in which they did the exercise, given obtained data from wearable devices.
+
+We will create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+We'll demonstrate how the use the randomForest method provides the best model in predicting outcome.
+
+# Exploratory phase
+
+Let's first indicate the reader which packages are loaded within the session
+```{r setup, echo=TRUE}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(rattle)
+library(AppliedPredictiveModeling)
+library(corrplot)
+library(randomForest)
+sessionInfo()
+```
+
+```{r setup2, echo=TRUE}
+set.seed(99)
+
+#import data training
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",destfile="C:/Users/mikael.herve/Documents/R/Machine learning/pml_training.csv")
+pml_training<-read.csv("C:/Users/mikael.herve/Documents/R/Machine learning/pml_training.csv")
+
+#import data testing
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",destfile="C:/Users/mikael.herve/Documents/R/Machine learning/pml_testing.csv")
+test_cases<-read.csv("C:/Users/mikael.herve/Documents/R/Machine learning/pml_testing.csv")
+
+#split training
+inTrain<-createDataPartition(y = pml_training$classe,p = 0.5,list = FALSE)
+training<-pml_training[inTrain,]
+testing<-pml_training[-inTrain,]
+
+#investigate data (dim, different graphs)
+dim(training)
+dim(testing)
+dim(test_cases)
+```
+Let's further explore our data, via View().
+
+First, we need to remove first 7 column, not relevant to exercise.
+Second, we need to remove columns where lots of NA.
+Third, we need to eliminate the near zero covariates, i.e. the ones that don't explain variance.
+
+```{r data clean, echo=TRUE}
+#clean non releavnt columns 
+training<-training[,-c(1:7)]
+testing<-testing[,-c(1:7)]
+
+#clean nearZeroVariance columsn
+nsv<-nearZeroVar(training)
+training<-training[,-nsv]
+testing<-testing[,-nsv]
+
+#clean N/A
+BadValues <- sapply(training, function(x) mean(is.na(x))) > 0.9
+training <- training[, BadValues == "FALSE"]
+testing<-testing[, BadValues == "FALSE"]
+
+#Ensuring dimensions are consistent in both training and testing  
+dim(training)
+dim(testing)
+```
+Given that we're left with 37 variables, let's look at whether there is further opportunities for variables reduction.  How are the current variables correlated by using the corrplot function and organizing by cluster.  We can observe that many variables are indeed highly correlated, and therefore the next would be to identify which variables contribute most to variance.
+
+```{r data clean2, echo=TRUE}
+#how are variables correlated. 
+M<-cor(training[,-53])
+corrplot(M,order = "hclust",tl.cex = .5)
+```
+
+
+# Analysis
+## rpart and accuracy
+
+We first run a simple tree analysis and measure the accurary of the model on the training and testing set.
+```{r graph , echo=TRUE}
+set.seed(249)
+modFit_rpart<-train(classe~.,data=training,method="rpart")
+confusionMatrix(predict(modFit_rpart,training),training$classe)$overall[1]
+confusionMatrix(predict(modFit_rpart,testing),testing$classe)$overall[1]
+```
+We know an approximate .49 accurary number is not optimal and we seek to find another more accurare model.
+
+## rf and accuracy
+From the correlation plot, we observe a high degree of correlated variable.  
+The next steps we wanted to take was to leverage a random forest model, via the caret package, which we tried first and the machine was not powerful enough to complete. 
+We then seeked to reduce the number of variable from 53 lower, via a pre-processing function such as principal component analysis, and also ran into computing issues.   
+We finally found good success in using a random forest model, via the randomForest package.  
+```{r graph 0, echo=TRUE}
+set.seed(249)
+modFit_randomForest<-randomForest(classe~.,data=training)
+confusionMatrix(predict(modFit_randomForest,training),training$classe)
+```
+
+When this model is applied to the test  set, we obtained equally satisfying high degree of accurary.
+```{r graph 1, echo=TRUE}
+set.seed(249)
+confusionMatrix(predict(modFit_randomForest,testing),testing$classe)
+```
+
+We finally display the factor importance of these variables used in the model.  Frankly, the level of accurary and computing need look to be satisfactory with the current model.  Had we need to fine tun the model, we would use the below graph to select fewer variables and increase number of trees.
+```{r graph 2, echo=TRUE}
+set.seed(249)
+varImpPlot(modFit_randomForest,n.var = 15)
+```
+
+## Prediction
+We finally apply the model fit to the given test cases provided and obtain the following predictions.
+```{r predict 0, echo=TRUE}
+prediction<-predict(modFit_randomForest,test_cases)
+prediction
+```
+
+# Conclusion
+
+We find that the random forest function provides a good balance of quantitative fitting (accuracy, sensitivity and specificity) as well as compute performance and therefore recommended using such model to use for the test cases.
